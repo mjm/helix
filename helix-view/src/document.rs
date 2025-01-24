@@ -195,6 +195,8 @@ pub struct Document {
     // when document was used for most-recent-used buffer picker
     pub focused_at: std::time::Instant,
 
+    // A name separate from the file name
+    pub name: Option<String>,
     pub readonly: bool,
 }
 
@@ -696,6 +698,7 @@ impl Document {
             config,
             version_control_head: None,
             focused_at: std::time::Instant::now(),
+            name: None,
             readonly: false,
             jump_labels: HashMap::new(),
         }
@@ -1132,7 +1135,7 @@ impl Document {
     pub fn reload(
         &mut self,
         view: &mut View,
-        provider_registry: &DiffProviderRegistry,
+        provider_registry: &mut DiffProviderRegistry,
     ) -> Result<(), Error> {
         let encoding = self.encoding;
         let path = match self.path() {
@@ -1142,6 +1145,8 @@ impl Document {
                 false => bail!("can't find file to reload from {:?}", self.display_name()),
             },
         };
+
+        provider_registry.reload(&path);
 
         // Once we have a valid path we check if its readonly status has changed
         self.detect_readonly();
@@ -1897,7 +1902,9 @@ impl Document {
 
     pub fn display_name(&self) -> Cow<'_, str> {
         self.relative_path()
-            .map_or_else(|| SCRATCH_BUFFER_NAME.into(), |path| path.to_string_lossy())
+            .map(|path| path.to_string_lossy().to_string().into())
+            .or_else(|| self.name.as_ref().map(|x| Cow::Owned(x.clone())))
+            .unwrap_or_else(|| SCRATCH_BUFFER_NAME.into())
     }
 
     // transact(Fn) ?

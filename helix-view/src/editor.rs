@@ -1101,6 +1101,17 @@ pub struct Editor {
 
     pub mouse_down_range: Option<Range>,
     pub cursor_cache: CursorCache,
+
+    pub editor_clipping: ClippingConfiguration,
+    pub user_defined_themes: HashMap<String, Theme>,
+}
+
+#[derive(Default)]
+pub struct ClippingConfiguration {
+    pub top: Option<u16>,
+    pub bottom: Option<u16>,
+    pub left: Option<u16>,
+    pub right: Option<u16>,
 }
 
 pub type Motion = Box<dyn Fn(&mut Editor)>;
@@ -1119,6 +1130,7 @@ pub enum EditorEvent {
 pub enum ConfigEvent {
     Refresh,
     Update(Box<Config>),
+    Change,
 }
 
 enum ThemeAction {
@@ -1223,6 +1235,8 @@ impl Editor {
             handlers,
             mouse_down_range: None,
             cursor_cache: CursorCache::default(),
+            editor_clipping: ClippingConfiguration::default(),
+            user_defined_themes: Default::default(),
         }
     }
 
@@ -1582,6 +1596,8 @@ impl Editor {
     pub fn switch(&mut self, id: DocumentId, action: Action) {
         use crate::tree::Layout;
 
+        log::info!("Switching view: {:?}", id);
+
         if !self.documents.contains_key(&id) {
             log::error!("cannot switch to document that does not exist (anymore)");
             return;
@@ -1758,6 +1774,8 @@ impl Editor {
                 Editor::doc_diagnostics(&self.language_servers, &self.diagnostics, &doc);
             doc.replace_diagnostics(diagnostics, &[], None);
 
+            // When opening a *new* file, ensure its diff provider is loaded.
+            self.diff_providers.add(&path);
             if let Some(diff_base) = self.diff_providers.get_diff_base(&path) {
                 doc.set_diff_base(diff_base);
             }
@@ -1789,6 +1807,10 @@ impl Editor {
         };
         if !force && doc.is_modified() {
             return Err(CloseError::BufferModified(doc.display_name().into_owned()));
+        }
+
+        if let Some(path) = doc.path() {
+            self.diff_providers.remove(path);
         }
 
         // This will also disallow any follow-up writes
@@ -1907,6 +1929,10 @@ impl Editor {
         // if leaving the view: mode should reset and the cursor should be
         // within view
         if prev_id != view_id {
+            log::info!("Changing focus: {:?}", view_id);
+
+            // TODO: Consult map for modes to change given file type?
+
             self.enter_normal_mode();
             self.ensure_cursor_in_view(view_id);
 
